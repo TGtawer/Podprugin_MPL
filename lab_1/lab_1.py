@@ -1,59 +1,80 @@
-import pandas
+import pandas as pd
+import numpy as np
 import random
+from concurrent.futures import ProcessPoolExecutor
 
-quan_elem = 50
 quan_files = 5
+quan_elem = 50
 
-def get_generated_file(quan_elem_into_data):
-    data = {'category': [], 'value' : []}
-    for i in range(quan_elem_into_data):
-        data['category'].append(['A', 'B', 'C', 'D'][random.randrange(4)])
+def generate_file(file_num):
+    data = {'category': [], 'value': []}
+    for i in range(quan_elem):
+        data['category'].append(random.choice(['A', 'B', 'C', 'D']))
         data['value'].append(round(random.uniform(1, 10), 2))
-    df = pandas.DataFrame(data)
-    print(df)
-    return df
+    
+    df = pd.DataFrame(data)
+    filename = f'output_{file_num}.csv'
+    df.to_csv(filename, index=False)
+    return filename
 
-def get_median(arr):
-    sum = 0
-    for elem in arr:
-        sum += elem
-    return round(sum / len(arr), 2)
+def process_file(filename):
+    df = pd.read_csv(filename)
+    results = []
+    
+    for category in ['A', 'B', 'C', 'D']:
+        category_values = df[df['category'] == category]['value']
+        median = float(np.median(category_values))
+        std_dev = float(np.std(category_values))
+        results.append({
+            'category': category,
+            'median': median,
+            'std_deviation': std_dev
+        })
+    
+    return results
 
-def get_proc_file(quan_elem_into_data, file):
-    df_csv = pandas.read_csv(file)
-    category_dict = {'A' : [], 'B' : [], 'C' : [], 'D' : []}
-    for i in range(quan_elem_into_data):
-        category_dict[f'{df_csv['category'][i]}'].append(df_csv['value'][i])
+def main():
+    print("Генерация файлов...")
+    filenames = [generate_file(i+1) for i in range(quan_files)]
 
-    median_dict = {
-        'A' : get_median(category_dict['A']),
-        'B' : get_median(category_dict['B']),
-        'C' : get_median(category_dict['C']),
-        'D' : get_median(category_dict['D'])
-    }
+    print("\nОбработка файлов...")
+    all_results = []
+    
+    with ProcessPoolExecutor() as executor:
+        results_list = list(executor.map(process_file, filenames))
 
-    new_data = {'category': df_csv['category'], 'median' : [], 'deviation' : []}
-    for i in range(quan_elem_into_data):
-        new_data['median'].append(median_dict[new_data['category'][i]])
-        new_data['deviation'].append(abs(new_data['median'][i] - df_csv['value'][i]))
-    df = pandas.DataFrame(new_data)
-    print(df)
+    for i, results in enumerate(results_list):
+        print(f"\nРезультаты для файла {i+1}:")
+        for result in results:
+            print(f"{result['category']}, {result['median']:.2f}, {result['std_deviation']:.2f}")
+        all_results.append(results)
+    
+    print("\n\nМедиана медиан и отклонение:")
+    
+    category_medians = {'A': [], 'B': [], 'C': [], 'D': []}
+    
+    for results in all_results:
+        for result in results:
+            category_medians[result['category']].append(result['median'])
+    
+    final_results = []
+    for category in ['A', 'B', 'C', 'D']:
+        medians = category_medians[category]
+        median_of_medians = float(np.median(medians))
+        std_of_medians = float(np.std(medians))
+        
+        final_results.append({
+            'category': category,
+            'median_of_medians': median_of_medians,
+            'std_of_medians': std_of_medians
+        })
+        
+        print(f"{category}, {median_of_medians:.2f}, {std_of_medians:.2f}")
+    
+    result_df = pd.DataFrame(final_results)
+    result_df.to_csv('final_results.csv', index=False)
+    print("\nРезультаты сохранены в 'final_results.csv'")
+    
 
-    median_of_medians = 0
-    for key in median_dict:
-        median_of_medians += median_dict[key]
-    median_of_medians = round(median_of_medians / len(median_dict.keys()), 2)
-
-    final_data = {'category': df_csv['category'], 'median_of_medians' : [], 'deviation_of_medians' : []}
-    for i in range(quan_elem_into_data):
-        final_data['median_of_medians'].append(median_of_medians)
-        final_data['deviation_of_medians'].append(abs(new_data['median'][i] - median_of_medians))
-    df = pandas.DataFrame(final_data)
-    print(df)
-    df.to_csv(file, index=False)
-
-for i in range(quan_files):
-    get_generated_file(50).to_csv(f'output_{i + 1}.csv', index=False)
-    get_proc_file(50, f'output_{i + 1}.csv')
-
-
+if __name__ == "__main__":
+    main()
